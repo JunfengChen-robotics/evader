@@ -90,6 +90,7 @@ class BaseWorld():
         ws_ = np.array([self.world_bounds_x, self.world_bounds_y])
         
         self.grid_map = MapGenerate(obstacles=self.obstacles, ws=ws_)
+        self.occ_map_obs = self.grid_map.occ_map_obs
         self.occ_map_evader = self.grid_map.occ_map_obs
     
 
@@ -248,3 +249,7 @@ class BaseWorld():
         self.valid_boundary_obstacles_candidate.extend([np.array([point]) for point in proj_edges if proj_edges[point]["valid"]])
         
         self.valid_boundary_obstacles = self.valid_boundary_obstacles_candidate
+        
+        
+    def array_in_list(self, array, lst):
+        return any(np.array_equal(array, x) for x in lst)   

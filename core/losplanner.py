@@ -3,11 +3,10 @@ import numpy as np
 
 class LosPlanner():
     
-    def __init__(self, pos, goal, world_config, robot_config):
+    def __init__(self, pos, goal, world_config):
         self.start_point = pos
         self.target_point = goal
         self.world_config = world_config
-        self.robot_config = robot_config
         
         
     def update_pos(self, sp, target, ref_v):

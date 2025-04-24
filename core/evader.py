@@ -11,6 +11,14 @@ from .setting import *
 from .astar_planner import AstarPlanner
 from .losplanner import LosPlanner
 
+class LocalInfo():
+    def __init__(self):
+        self.idx = []
+        self.pos = []
+        self.size = []
+        self.yaw = []
+        self.vert = []
+
 
 class Evader():
     '''
@@ -24,17 +32,20 @@ class Evader():
         
         self.scout_range = 5
         self.robot_radius = 0.1
-        self.velocity = 2
+        self.velocity = 1.6
         self.state = pos
         self.init_state = self.state
+        self.modified_goal_pos = [self.state[0]+0.5, self.state[1]-0.5]
+        self.robot_memory_pos = {}
+        self.robots_info_local_ = LocalInfo()
+        self.obs_info_local_ = LocalInfo()
         self.set_init_state()
         
         
     def set_init_state(self):
         self.state = self.init_state
-        self.sp = [0, 0]
+        self.sp = self.state
         self.sp_global = [0,0]
-        self.route = np.array([self.sp])
         self.f = 0
         self.vel_array = []
         self.sp_ind = 0
@@ -65,8 +76,6 @@ class Evader():
             self.reachable_area = ReachableArea(world = self.world, 
                                                 pursuers =  pursuers, 
                                                 evader = self, 
-                                                robot_config = 
-                                                self.robot_configs, 
                                                 pred_step = PRED_STEP, 
                                                 w_c = 1, 
                                                 show=False)
@@ -74,7 +83,10 @@ class Evader():
     
     
     # region 传感信息
-    def local_info_and_collision_check(self, multi_robot_pos_real_, obstacles, scout_range, robot_radius): 
+    def local_info_and_collision_check(self, police_agents): 
+        multi_robot_pos_real_ = np.zeros((2, len(police_agents)))
+        for iRobot in range(0, len(police_agents)):
+            multi_robot_pos_real_[:, iRobot] = police_agents[iRobot].state
         p = self.state
         self.robots_info_local_.idx = []
         self.robots_info_local_.pos = []
@@ -84,33 +96,31 @@ class Evader():
         self.obs_info_local_.vert = []
         self.obs_info_local_.idx = []
 
-        nBoxObs = len(obstacles)
+        nBoxObs = len(self.world.obstacles)
         collision_mtx_obs = np.zeros((1,nBoxObs))
 
         k = 0
         for jBoxObs in range(0, nBoxObs):
-            vert_j = obstacles[jBoxObs][:,:]
+            vert_j = self.world.obstacles[jBoxObs][:,:]
             vert_j_3d = np.hstack((vert_j, np.ones((vert_j.shape[0], 1))))  # 对每个顶点添加Z坐标为0
             pe_3d = np.append(p, 1).reshape(-1, 1)
             self.obs_info_local_.idx.append(jBoxObs)
-            self.obs_info_local_.vert.append(obstacles[jBoxObs][:,:].T)
+            self.obs_info_local_.vert.append(self.world.obstacles[jBoxObs][:,:].T)
             k = k + 1
                 
-        collision_mtx_obs =  is_in_obstacle(p, obstacles)
+        collision_mtx_obs =  is_in_obstacle(p, self.world.obstacles)
         collision_mtx_obs = collision_mtx_obs.reshape(1,1)
         
         k = 0
-        for iRobot in range(0, nRobot-1): # remove evader
-            if iRobot == self.identity.ID:
-                continue
+        for iRobot in range(0, nRobot): # remove evader
             pt = multi_robot_pos_real_[:, iRobot]
             d_ij = np.linalg.norm(p - pt)
             
-            if d_ij < scout_range and is_in_sight(p, pt, self.obs_info_local_.vert, scout_range):
+            if d_ij < self.scout_range and is_in_sight(p, pt, self.obs_info_local_.vert, self.scout_range):
                 self.robots_info_local_.idx.append(iRobot)
                 self.robots_info_local_.pos.append(multi_robot_pos_real_[:, iRobot])
                 k = k + 1
-                if d_ij < 2 * robot_radius * 1:
+                if d_ij < 2 * self.robot_radius * 1:
                     collision_mtx_robot[0,iRobot] = 1 
                 
         self.collision_mtx_ = np.hstack((collision_mtx_robot, collision_mtx_obs))
@@ -159,20 +169,16 @@ class Evader():
     
     
     # region 运动
-    def sel_stgy(self, world, robot_config, goal_pos = None,  cost_map = None):
-        if cost_map is None:
-            cost_map = world.grid_map.occ_map_obs
-        else:
-            cost_map = cost_map
-            
-        goal_pos = self.modfiy_goal_projected(goal_pos, world,'goal')
+    def sel_stgy(self):
+       
+        self.modified_goal_pos = self.modfiy_goal_projected(self.goal, self.world,'goal')
 
-        self.act_planner(world, robot_config,cost_map) 
+        self.act_planner(self.world, self.world.grid_map.occ_map_obs) 
         self.global_planner.astar_special = False
         
-        state = self.modfiy_goal_projected(self.state.reshape(2), world, 'current state')
+        state = self.modfiy_goal_projected(self.state.reshape(2), self.world, 'current state')
         start = state
-        end = goal_pos
+        end = self.modified_goal_pos
         
         self.global_planner.planning(end[0], end[1],start[0], start[1], 'evader')
         
@@ -181,9 +187,11 @@ class Evader():
         if m > 1:
             self.sp_ind = 0
         else:
-            self.global_planner.astar_special = True       
+            self.global_planner.astar_special = True 
             
-    def act_planner(self, world, robot_config, occ_map):
+        self.sp = self.state
+            
+    def act_planner(self, world, occ_map):
         
         # if self.global_planner == None:
         self.global_planner = AstarPlanner(world=world)
@@ -192,9 +200,10 @@ class Evader():
         self.local_planner = LosPlanner(pos=None, 
                                         goal=None, 
                                         world_config=world.config, 
-                                        robot_config=robot_config)
+                                        )
         
-    def modfiy_goal_projected(self, goal, world):
+        
+    def modfiy_goal_projected(self, goal, world, type):
         goal_idx = world.grid_map.points_to_idx(goal.reshape(2,1).T)
         if not world.grid_map.occ_map_obs[goal_idx[0][0], goal_idx[0][1]] == np.inf:
             return goal
@@ -210,19 +219,20 @@ class Evader():
                     smaple_idx = world.grid_map.points_to_idx(smaple_point.reshape(2,1).T)
                     
                     if not world.grid_map.occ_map_obs[smaple_idx[0][0], smaple_idx[0][1]] == np.inf:
-                        print(f"for evader from invalid goal={goal} to valid goal={smaple_point}")
+                        print(f"evader for {type} from invalid goal={goal} to valid goal={smaple_point}")
                         return smaple_point
                     
                 radius += DISCRETE_SIZE
                 
-    def move(self, world, online_ex_time = 1, goal_tolerance=0.05):
+                
+    def move(self, online_ex_time = 1, goal_tolerance=0.05):
         
-        self.prev_pos_real_ = self.pos_real_
+        self.prev_state = self.state
         
         if self.global_planner.astar_special:
-            cur_idx = self.global_planner.world.grid_map.points_to_idx(self.pos_real_.T)
+            cur_idx = self.global_planner.world.grid_map.points_to_idx(self.state.reshape(2,1).T)
             if self.global_planner.world.grid_map.occ_map_obs[cur_idx[0][0], cur_idx[0][1]] == np.inf:
-                self.find_nearest_free_point(world)
+                self.find_nearest_free_point(self.world)
                 self.find_nearest_inner_point()
             else:
                 pass
@@ -234,26 +244,47 @@ class Evader():
                     ref_vel = self.velocity
                     
                     cur_pos = self.local_planner.update_pos(self.sp, self.sp_global, ref_vel)
-                    self.pos = cur_pos
-                    self.state = self.pos
-                    self.pos_real_ = np.array(self.pos).reshape(2,1)
+                    self.state = cur_pos
                 else:
                     break
                 
-            self.find_nearest_free_point(world)
+            self.find_nearest_free_point(self.world)
             self.find_nearest_inner_point()
+        
+        if self.state.shape == (2,1):
+            raise ValueError("The state should be 1D array, but got 2D array.")
+            
+            
+    def local_online_plan(self, path_id:int, goal_tolerance):
+        '''
+        los planner: 根据astar生成的path, 找离他最近的并且还未遍历过的点，然后采用目视导航的方式，直接朝着这个点走
+        '''
+        target_pt = None
+        mis_dist = float('inf')
+        
+        for i in range(path_id+1, self.global_planner.path.shape[0]):
+            point = self.global_planner.path[i]
+            # 计算点到self.sp的距离
+            dist = np.linalg.norm(np.array(point) - np.array(self.sp))
+            if dist > goal_tolerance and dist < mis_dist:
+                target_pt = point
+                mis_dist = dist
+                self.sp_global = target_pt
+                self.sp_ind = i
+                break 
+            
             
     def find_nearest_free_point(self, world):
         """
         Check if self.pos_real_ is inside any of the obstacles. 
         If it is, find the nearest point outside the obstacles.
         """
-        cur_idx = self.global_planner.world.grid_map.points_to_idx(self.pos_real_.T)
+        cur_idx = self.global_planner.world.grid_map.points_to_idx(self.state.reshape(2,1).T)
         if self.global_planner.world.grid_map.occ_map_obs[cur_idx[0][0], cur_idx[0][1]] == np.inf:
             # print("Position is inside an obstacle, finding nearest free point.")
             nearest_point = None
 
-            cur_idx = self.global_planner.world.grid_map.points_to_idx(self.pos_real_.T)
+            cur_idx = self.global_planner.world.grid_map.points_to_idx(self.state.reshape(2,1).T)
             
             # 替换一种新的策略:
             dt = world.config['map']['timestep']
@@ -273,8 +304,8 @@ class Evader():
                         
                         
             if nearest_point is not None:
-                self.pos_real_ = nearest_point.reshape(1,2).T
-                print(f"\033[93mEvader moved to nearest free point: {self.pos_real_}\033[0m")
+                self.state = nearest_point.reshape(2)
+                print(f"\033[93mEvader moved to nearest free point: {self.state}\033[0m")
                 
             else:
                 print("No free point found.")
@@ -289,9 +320,9 @@ class Evader():
         boundary = np.array([self.global_planner.world.world_bounds_x, self.global_planner.world.world_bounds_y])
         # 检查当前位置是否在边界之外或在边界上
         flag = False
-        while not is_in_boundary(self.pos_real_.T.ravel().tolist(), boundary):
+        while not is_in_boundary(self.state.reshape(2,1).T.ravel().tolist(), boundary):
             nearest_point = None
-            cur_idx = self.global_planner.world.grid_map.points_to_idx(self.pos_real_.T)
+            cur_idx = self.global_planner.world.grid_map.points_to_idx(self.state.reshape(2,1).T)
             
             # 定义方向：左、右、上、下以及对角线方向
             directions = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]
@@ -306,14 +337,14 @@ class Evader():
                 if is_in_boundary(new_point, self.global_planner.boundary):
                     nearest_point = new_point
                     flag = True
-                    self.pos_real_ = nearest_point.reshape(2,1)
-                    print(f"Evader Moved to nearest inner point: {self.pos_real_}")
+                    self.state = nearest_point.reshape(2)
+                    print(f"Evader Moved to nearest inner point: {self.state}")
                     break
             
             if flag:
                 break
             
-        if not is_in_boundary(self.pos_real_.T.ravel().tolist(), boundary):
+        if not is_in_boundary(self.state.reshape(2,1).T.ravel().tolist(), boundary):
             raise ValueError("No inner point found.")       
     
     # endregion

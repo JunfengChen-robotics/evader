@@ -252,3 +252,7 @@ class CostMap:
     def calculate_sigma(self,main_base, assist_base, distance):
         sigma = np.sqrt(-max(distance,0.1) ** 2 / (2 * np.log(assist_base / main_base)))
         return sigma
+    
+    
+    def points_to_idx(self, xy=None):
+        return self.world.points_to_idx(xy)

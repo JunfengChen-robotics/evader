@@ -23,7 +23,7 @@ SOFTWARE.
 """
 from heapq import heapify, heappush, heappop
 # from visible_vertices import edge_distance
-from NewCode.src.Robot.MotionPlanner.GlobalPlanner.visgraph.visible_vertices import edge_distance, heuristic
+from .visible_vertices import edge_distance, heuristic
 
 try:
     dict.iteritems

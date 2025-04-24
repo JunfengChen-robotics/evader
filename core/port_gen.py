@@ -11,6 +11,7 @@ from collections import OrderedDict, defaultdict, deque
 from shapely.geometry import LineString, Point, Polygon
 from .setting import *
 import networkx as nx
+import matplotlib.pyplot as plt
 
 
 class PortGenerate():
@@ -723,7 +724,6 @@ class PortGenerate():
         self.make_gates_set_and_gates_attributes_set(gates_set_pre_sorted, pe)
 
     
-    
     def update_robot_node_dict(self, pe, pursuers):
 
         self.evader_node_idx,self.evader_space_node_idx, self.pursuer_node_idxs, self.pursuer_space_node_idxs = None,None, {}, {}
@@ -884,7 +884,7 @@ class PortGenerate():
                 
     def filter_critical_nodes(self, evader, pursuers, show=False):
         
-        relate_vel_coeff = pursuers[0].velocity / evader.velocity
+        relate_vel_coeff = pursuers[0].max_velocity / evader.velocity
 
         # evader_paths = nx.single_source_dijkstra_path(self.graph, self.evader_node_idx)
         # evader_paths_length = nx.single_source_dijkstra_path_length(self.graph, self.evader_node_idx)
@@ -960,4 +960,476 @@ class PortGenerate():
                     critical_nodes[pursuer_id]["attacker_cand"].append(node)
 
         return critical_nodes
-         
+    
+    
+
+    def remove_overlap_edges(self, edges):
+        
+        def step1(edges, skeleton_polys):
+            # step 1： 交叉性约束
+            edge_dict = {}  
+            for edge in edges:
+
+                edge_length = np.linalg.norm(np.array(edge[0]) - np.array(edge[1]))
+                line1 = LineString([edge[0], edge[1]])
+                overlap = False
+                to_remove = []
+
+                if tuple(edge) in skeleton_polys or tuple(edge[::-1]) in skeleton_polys:
+                    edge_dict[line1] = (edge, edge_length, "skeleton_edge")
+                    
+                for line2, (existing_edge, existing_length,edge_type) in edge_dict.items():
+                    # 如果两条线段相交，且不是相切的, 且不是相反的
+                    if line1.intersects(line2) and (len(set(line1.coords) & set(line2.coords)) != 1):
+                        if edge_length < existing_length and edge_type != "skeleton_edge":
+                            to_remove.append(line2)    
+                        else:
+                            overlap = True
+                            break
+                                
+                if not overlap:
+                    for line2 in to_remove:
+                        del edge_dict[line2]
+                    edge_dict[line1] = (edge, edge_length, "gate_edge")
+                        
+            edges = [existing_edge for existing_edge, _, _ in edge_dict.values()] + [existing_edge[::-1] for existing_edge, _, _ in edge_dict.values()]
+
+            return edges
+        
+        # step2: 唯一性约束：从点集 A 到点集 B 的映射中，每个点之间的映射应当是一一对应的，或者没有映射。
+        # 确认不同ibox之间的唯一连接数目
+        
+        def step2(edges, skeleton_polys, point_to_idx_dict, idx_to_point_dict, skeleton_polys_dict):
+            connect_info = {}
+            new_edges = []
+            n_points = len(point_to_idx_dict)
+            dist_matrix = np.full((n_points, n_points), 1e3)
+            closest_dist_matrix = np.full((n_points, n_points), 1e3)
+            cost_matrix = np.full((n_points, n_points), 2e2)
+            
+            for edge in edges:
+                p1 = tuple(edge[0])
+                p2 = tuple(edge[1])
+                
+                idx1, skel_idxs1 = point_to_idx_dict[p1]['point_idx'], point_to_idx_dict[p1]['skeleton_idxs']
+                idx2, skel_idxs2 = point_to_idx_dict[p2]['point_idx'], point_to_idx_dict[p2]['skeleton_idxs']
+
+                ibox1, ibox2 = point_to_idx_dict[p1]['ibox'], point_to_idx_dict[p2]['ibox']
+
+                edge_length = np.linalg.norm(np.array(p1) - np.array(p2))
+
+                # closest_dist_to_line = min([point_to_line_distance(point, p1, p2) for point in point_to_idx_dict.keys() if point != p1 and point != p2])
+
+                if ibox1 == ibox2:
+                    if edge in skeleton_polys or edge[::-1] in skeleton_polys:
+                        new_edges.append(edge)
+
+                    else:
+                        continue
+                
+                else:
+                    for (skel_idx1, skel_idx2) in product(skel_idxs1, skel_idxs2):
+                        if (skel_idx1, skel_idx2) not in connect_info.keys() and (skel_idx2, skel_idx1) not in connect_info.keys():
+                            connect_info[(skel_idx1, skel_idx2)] = {"edges":[], "points":{skel_idx1:set(), skel_idx2:set()}, "max_count":0}
+
+                        if (skel_idx1, skel_idx2) in connect_info.keys():
+                            connect_info[(skel_idx1, skel_idx2)]["edges"].append(edge)
+                            connect_info[(skel_idx1, skel_idx2)]["points"][skel_idx1].add(p1)
+                            connect_info[(skel_idx1, skel_idx2)]["points"][skel_idx2].add(p2)
+                            connect_info[(skel_idx1, skel_idx2)]["max_count"] = min(len(connect_info[(skel_idx1, skel_idx2)]["points"][skel_idx1]), len(connect_info[(skel_idx1, skel_idx2)]["points"][skel_idx2]))
+
+                        elif (skel_idx2, skel_idx1) in connect_info.keys():
+                            connect_info[(skel_idx2, skel_idx1)]["edges"].append(edge)
+                            connect_info[(skel_idx2, skel_idx1)]["points"][skel_idx1].add(p1)
+                            connect_info[(skel_idx2, skel_idx1)]["points"][skel_idx2].add(p2)
+                            connect_info[(skel_idx2, skel_idx1)]["max_count"] = min(len(connect_info[(skel_idx2, skel_idx1)]["points"][skel_idx1]), len(connect_info[(skel_idx2, skel_idx1)]["points"][skel_idx2]))
+
+                dist_matrix[idx1, idx2], dist_matrix[idx2, idx1] = edge_length, edge_length
+
+                # closest_dist_matrix[idx1, idx2], closest_dist_matrix[idx2, idx1] = closest_dist_to_line, closest_dist_to_line
+
+                # cost会考虑edge_length和closest_dist_to_line
+                # cost_matrix[idx1, idx2] *= closest_dist_to_line - 0.4
+                # cost_matrix[idx2, idx1] *= closest_dist_to_line - 0.4
+
+            import cvxpy as cp
+
+            # 决策变量
+            x = cp.Variable((n_points, n_points), boolean=True)
+
+            # 约束条件
+            constraints = []
+            
+            # 点约束：
+            # 不同ibox之间的点映射应当是一一对应的，或者没有映射
+            # 同一个ibox之间不应当有映射
+            for i in range(n_points):
+                rel_skel_idxs = idx_to_point_dict[i]['skeleton_idxs']
+                for skeleton_idx, skel_info in skeleton_polys_dict.items():
+                    if skeleton_idx in rel_skel_idxs:
+                        continue
+                    point_constraints = []
+                    for point_idx in skel_info['point_idxs']:
+                        point_constraints.append(x[i, point_idx])
+                    constraints.append(cp.sum(point_constraints) <= 1)
+                        
+            # ibox约束：
+            # 对于ibox之间的连接，连接数应该等于max_count
+            # for skel1, skel2 in connect_info.keys():
+            #     point_idxs1 = skeleton_polys_dict[skel1]['point_idxs']
+            #     point_idxs2 = skeleton_polys_dict[skel2]['point_idxs']
+            #     ibox_constraints = []
+            #     for i in range(len(point_idxs1)):
+            #         for j in range(len(point_idxs2)):
+            #             ibox_constraints.append(x[point_idxs1[i], point_idxs2[j]])
+            #     constraints.append(cp.sum(ibox_constraints) <= connect_info[(skel1, skel2)]["max_count"])
+                
+            # 对称约束
+            for i in range(n_points):
+                for j in range(n_points):
+                    constraints.append(x[i, j] == x[j, i])
+            
+            # 目标函数: 最小化总长度
+            # z = dist_matrix * x, cost = cost_matrix * (1-x)
+            z = cp.sum(cp.multiply(dist_matrix, x))
+            q = cp.sum(cp.multiply(closest_dist_matrix, x))
+            cost = cp.sum(cp.multiply(cost_matrix, 1-x))
+            objective = cp.Minimize(cost + z)
+            
+            # 构建问题并求解
+            prob = cp.Problem(objective, constraints)
+            prob.solve(solver=cp.GLPK_MI)
+            
+            if prob.status != cp.OPTIMAL:
+                raise ValueError("Solver did not converge!")
+            
+            # 提取结果
+            x_value = x.value
+            for i in range(n_points):
+                for j in range(n_points):
+                    if x_value[i, j] == 1:
+                        new_edges.append([idx_to_point_dict[i]['point'], idx_to_point_dict[j]['point']])
+
+            return new_edges
+        
+        # 先1后2
+        edges = step1(edges, self.skeleton_polys)
+        edges = step2(edges, self.skeleton_polys, self.point_to_idx_dict, self.idx_to_point_dict, self.skeleton_polys_dict)
+        
+        # 先2后1
+        # edges = step2(edges, self.skeleton_polys, self.point_to_idx_dict, self.idx_to_point_dict, self.skeleton_polys_dict)
+        # edges = step1(edges, self.skeleton_polys)
+
+        return edges
+    
+    
+    def build_closure(self,closure_edges):
+        if not closure_edges:
+            return []
+
+        # 将边列表转换为字典形式，便于查找连接
+        edge_map = {}
+        for start, end in closure_edges:
+            if start in edge_map:
+                edge_map[start].append(end)
+            else:
+                edge_map[start] = [end]
+            if end in edge_map:
+                edge_map[end].append(start)
+            else:
+                edge_map[end] = [start]
+
+        # 从边列表中构建闭包
+        closure = []
+        visited = set()
+
+        start_vertex = closure_edges[0][0]
+        current_vertex = start_vertex
+
+        while len(visited) < len(closure_edges):
+            if current_vertex not in visited:
+                closure.append(current_vertex)
+                visited.add(current_vertex)
+
+            next_vertex = None
+            for neighbor in edge_map[current_vertex]:
+                if neighbor not in visited:
+                    next_vertex = neighbor
+                    break
+
+            if next_vertex is None:
+                break
+
+            current_vertex = next_vertex
+
+        def polygon_area(vertices):
+            n = len(vertices)
+            area = 0
+            for i in range(n):
+                x1, y1 = vertices[i]
+                x2, y2 = vertices[(i + 1) % n]
+                area += x1 * y2 - x2 * y1
+            return area / 2
+
+        # 判断顺序并反转为逆时针
+        if polygon_area(closure) > 0:
+            closure = closure[::-1]
+
+        return closure
+    
+    
+    def calculate_ports(self, robot_radius = 0.1):
+        '''
+        generate ports modified by Junfeng
+        1. each vertex for each obstacle has two ports
+        '''
+        # for ibox in range(0, self.obstacles.shape[2]): # self.obstacles: list[np.array shape(4,2) or shape(6,2)]
+        # for i, vertex in enumerate(self.obstacles[:,:,ibox]):
+        self.bbox_valid_ports = {}
+        for ibox in range(len(self.obstacles)):
+            self.bbox_valid_ports[ibox] = {'vertex_ports': {}, 'center': None}
+            for i, vertex in enumerate(self.obstacles[ibox].tolist()):
+                self.bbox_valid_ports[ibox]['center'] = np.mean(self.obstacles[ibox], axis=0)
+                if not is_in_boundary(vertex, self.boundary):
+                    continue
+
+                else:
+                    # 从self.obstacles[:,:, ibox]找到vertex的邻居顶点
+                    pre_ind = (i - 1) % self.obstacles[ibox].shape[0]
+                    next_ind = (i + 1) % self.obstacles[ibox].shape[0]
+                    
+                    # obtain neiborhood vertex
+                    # pre_vertex = self.obstacles[pre_ind, :, ibox]
+                    # next_vertex = self.obstacles[next_ind, :, ibox]
+                    
+                    pre_vertex = self.obstacles[ibox][pre_ind,:]
+                    next_vertex = self.obstacles[ibox][next_ind,:]
+                    
+                    # calculate the vector from vertex to pre_vertex and next_vertex
+                    vector_pre =  pre_vertex - vertex
+                    vector_next = next_vertex - vertex
+                    
+                    # extend a minor vector to generate the port for deleting vertex
+                    minor_pre_vector = vertex + vector_pre / np.linalg.norm(vector_pre) * 0.1
+                    minor_pre_vector -= vector_next/ np.linalg.norm(vector_next) * 0.1
+                    minor_next_vector = vertex + vector_next / np.linalg.norm(vector_next) * 0.1
+                    minor_next_vector -= vector_pre / np.linalg.norm(vector_pre) * 0.1
+                    if is_in_obstacle(minor_pre_vector, self.obstacles) or is_in_obstacle(minor_next_vector, self.obstacles):
+                        # continue
+                        self.bbox_valid_ports[ibox]['vertex_ports'][tuple(vertex)] = []
+
+                    else:
+                        port1 = vertex + vector_pre / np.linalg.norm(vector_pre) * robot_radius * 2
+                        port1 -= vector_next / np.linalg.norm(vector_next) * robot_radius * 2
+                        port2 = vertex + vector_next / np.linalg.norm(vector_next) * robot_radius * 2
+                        port2 -= vector_pre / np.linalg.norm(vector_pre) * robot_radius * 2
+
+                        self.ports_vertex[tuple(vertex)] = np.array([np.reshape(port1, (-1, 1)), np.reshape(port2, (-1, 1))])
+                        self.bbox_valid_ports[ibox]['vertex_ports'][tuple(vertex)] = np.array([np.reshape(port1, (-1, 1)), np.reshape(port2, (-1, 1))])
+
+                
+    def find_box_id_and_vertex(self, center, bbox_valid_ports, vertex):
+        bbox_id = None
+        for ibox, info in bbox_valid_ports.items():
+            if np.array_equal(center, np.round(info['center'],2)):
+                bbox_id = ibox
+                break
+        vertex_list = list(bbox_valid_ports[bbox_id]['vertex_ports'].keys())
+        
+        # 计算vertex_list中每个点到vertex的距离
+        distances = [np.linalg.norm(np.array(point) - np.array(vertex)) for point in vertex_list]
+
+        # 创建一个包含点和对应距离的元组的列表
+        points_and_distances = list(zip(vertex_list, distances))
+
+        # 根据距离对点进行排序
+        points_and_distances.sort(key=lambda x: x[1])
+
+        # 获取距离vertex最近的两个点
+        nearest_two_points = [point for point, distance in points_and_distances[:2]] #[point1, point2]
+
+        return bbox_id, nearest_two_points
+
+        
+    def transform_state_to_node_idx(self, state, whether_space=False):
+
+        def is_point_in_or_touching_polygon(point, poly):
+            return Polygon(poly).contains(Point(point)) or Polygon(poly).touches(Point(point))
+        
+        for sub_space_idx, sub_space in self.sub_spaces_set.items():
+            if is_point_in_or_touching_polygon(state, sub_space['origin_info']['vertex']):
+                current_sub_space_idx = sub_space_idx
+            
+        space_mid_point = self.sub_spaces_set[current_sub_space_idx]['origin_info']['mid_point']
+
+        current_space_node_idx = self.node_to_idx_dict[tuple(space_mid_point)]['node_idx']
+
+        if not whether_space:
+            neighbors = [idx for idx in self.idx_to_node_dict[current_space_node_idx]["connected_node_idxs"]] \
+                        + [current_space_node_idx]
+        else:
+            neighbors = [current_space_node_idx]
+
+        node_dict = {idx: self.idx_to_node_dict[idx]["node"] for idx in list(neighbors)}
+            
+        def find_nearest_node_idx(node_dict, state):
+
+            min_distance = np.inf
+            nearest_idx = None
+
+            for idx, node in node_dict.items():
+                distance = np.linalg.norm(np.array(node) - np.array(state))
+                if distance < min_distance:
+                    min_distance = distance
+                    nearest_idx = idx
+
+            return nearest_idx
+        
+        nearest_node_idx = find_nearest_node_idx(node_dict, state)
+
+        return nearest_node_idx
+    
+    
+            
+    def calculate_nodes_importance(self, start_node, comb_nodes_dict):
+
+        # 计算包含comb_nodes_dict节点的路径/所有路径的比例
+
+        upper, lower = 0, len(self.distance_info_graph[start_node])
+        pursuer_num = len(comb_nodes_dict)
+
+        if pursuer_num > 1:
+            weight = np.log(1+1/lower)/np.log(pursuer_num)
+        else:
+            weight = 1
+
+        protected_nodes = {p_id:[] for p_id in comb_nodes_dict.keys()}
+
+        for p_id, node_id in comb_nodes_dict.items():
+            protected_nodes[p_id].append(node_id)
+            
+            if self.idx_to_node_dict[node_id]["node_type"] == "point":
+                protected_nodes[p_id].extend([idx for idx in self.idx_to_node_dict[node_id]["connected_node_idxs"] if self.idx_to_node_dict[idx]["node_type"] == "gate"])
+            
+            elif self.idx_to_node_dict[node_id]["node_type"] == "gate":
+                protected_nodes[p_id].extend([idx for idx in self.idx_to_node_dict[node_id]["connected_node_idxs"] if self.idx_to_node_dict[idx]["node_type"] == "point"])
+
+            # exclude start_node
+            # protected_nodes[p_id] = [node for node in protected_nodes[p_id] if (node != start_node and node != node_id)]
+
+        # 提前计算路径集合和保护节点集合
+        path_sets = {
+            end_node: set(self.distance_info_graph[start_node][end_node]["path"])
+            for end_node in self.distance_info_graph[start_node].keys()
+        }
+        protected_nodes_sets = {p_id: set(nodes) for p_id, nodes in protected_nodes.items()}
+
+        # 计算 upper
+        upper = 0
+        for end_node in path_sets.keys():
+            count = 0
+            for p_id, nodes_set in protected_nodes_sets.items():
+                if path_sets[end_node] & nodes_set:
+                    count += 1
+                    if count == pursuer_num:  # 提前终止
+                        break
+            upper += count**weight / pursuer_num**weight
+
+        nodes_importance = upper / lower
+
+        if any([self.idx_to_node_dict[node_id]["node_type"] == "point" for node_id in comb_nodes_dict.values()]):
+            if nodes_importance <= 0.7:  # 包含point node组合需要满足的条件
+                nodes_importance = 0 
+        else:
+            nodes_importance = 0.5 * nodes_importance
+            
+        return nodes_importance
+    
+        
+    def make_gates_set_and_gates_attributes_set(self, gates_set_pre, pe):
+
+        gates_set_pre = gates_set_pre
+
+        self.gates_set = {idx:{"gates_attributes":{},"pursuer_node_comb":[],"deterrance_score":0} for idx in range(len(gates_set_pre))}
+        
+        for idx, gates_info in enumerate(gates_set_pre):
+
+            for gate, gate_attributes in gates_info['gates_attributes'].items():
+                if gate_attributes['gate_type'] == "attacker_cand":
+                    vertex1, vertex2 = np.array(gate[0]), np.array(gate[1])
+                    ibox1, ibox2 = self.point_to_idx_dict[tuple(vertex1)]['ibox'], self.point_to_idx_dict[tuple(vertex2)]['ibox']
+                    type1, type2 = self.valid_bbox[ibox1]['type'], self.valid_bbox[ibox2]['type']
+                    center1, center2 = self.valid_bbox[ibox1]['center'], self.valid_bbox[ibox2]['center']
+
+                    gate_attributes = {'data':tuple(gate), 'type':(type1, type2), 'center': (center1, center2), 'assign_pursuer_idx':gate_attributes['assign_pursuer_idx']\
+                        , "gate_type":gate_attributes["gate_type"], "neighbor_nodes":gate_attributes["neighbor_nodes"]}
+                                        
+                    new_gate_attributes = self.find_vertices_ports_of_gate(gate, gate_attributes, pe)
+
+                else:
+                    new_gate_attributes = gate_attributes
+
+                self.gates_set[idx]["gates_attributes"][gate] = new_gate_attributes
+
+                self.gates_set[idx]["pursuer_node_comb"] = gates_info["pursuer_node_comb"]
+
+                self.gates_set[idx]["deterrance_score"] = gates_info["deterrance_score"]
+
+    
+        
+    def find_vertices_ports_of_gate(self, gate, gate_attributes, pe, robot_radius = 0.1, show = False):
+        '''
+           authors: 
+                    Modified by Yinhang and Junfeng
+            Date: 
+                    2024.07.11
+            Info:
+                    get all vertexs inside the circle generated by the gate center and gate radius
+        '''
+        all_valid_vertices = []
+        vertex_ports = {}
+        
+        for vertex in gate:
+
+            if tuple(vertex) in self.vertices_ports_dict.keys():
+                all_valid_vertices.append(vertex)
+                all_ports = self.vertices_ports_dict[tuple(vertex)]['all_ports']
+                vertex_ports[tuple(vertex)] = list(all_ports)
+
+        gate_attributes['vertex_ports'] = vertex_ports
+        gate_attributes['all_vertices'] = [tuple(vertex) for vertex in all_valid_vertices]
+
+        if show:
+            # plot skeletons, gate and ports
+            plt.figure()
+            plt.title("generate ports")
+
+            for ibox in range(len(self.valid_bbox)):
+                skeleton = self.valid_bbox[ibox]['skeleton']
+                plt.plot(skeleton[:,0], skeleton[:,1], 'r-')
+
+            for vertex in all_valid_vertices:
+                plt.scatter(vertex[0], vertex[1], color='blue', marker='o')
+
+            plt.plot([gate[0][0], gate[1][0]], [gate[0][1], gate[1][1]], 'b-', zorder=10)
+
+            for vertex_ports in vertex_ports.values():
+                for port in vertex_ports:
+                    plt.scatter(port[0], port[1], color='pink', marker='*')
+
+            plt.scatter(pe[0], pe[1], color='black', marker='*', zorder=40)
+
+            # plot circles
+            circle = plt.Circle(gate_center, gate_radius, color='green', fill=False)
+            plt.gca().add_artist(circle)
+
+            plt.xlim(self.boundary[0][0], self.boundary[0][1])
+            plt.ylim(self.boundary[1][0], self.boundary[1][1])
+
+            plt.pause(10)
+            # plt.savefig('ports.png')
+
+        # return valid_ports, gate_attributes
+        return gate_attributes
+
+              

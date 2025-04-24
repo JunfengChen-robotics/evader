@@ -9,9 +9,16 @@ See Wikipedia article (https://en.wikipedia.org/wiki/A*_search_algorithm)
 
 """
 import numpy as np
+import os,sys
+path = os.path.abspath(os.path.join(os.getcwd(), "."))
+DC_path = os.path.join(path)
+sys.path.append(DC_path)
 import math
+import time
+
 import matplotlib.pyplot as plt
-from .utils import * 
+from .world import BaseWorld
+import argparse
 
 show_animation = False
 
@@ -37,6 +44,7 @@ class AstarPlanner():
         self.rr = 0.1
         self.motion = self.get_motion_model()
         
+        # self.add_cost_set = None
 
 
     class Node:
@@ -52,27 +60,34 @@ class AstarPlanner():
     
     def process_map(self, occ_map):
         self.occ_map_obs = occ_map
+        # plt.matshow(self.occ_map_obs)
+        # plt.colorbar()
+        # print("obstacle_map generated")
+        # plt.show()
 
-    def gcost_add(self, fixed_node, update_node_coordinate, i, added_obs_soft=None, add_cost=1e3):
-        gc = self.motion[i][2]
-        update_x, update_y = update_node_coordinate
-
-        if isinstance(added_obs_soft, set):
-            added_obs_soft = np.array(list(added_obs_soft))
+    def gcost_add(self, current_node, update_node, move_cost):
+        # start_time = time.time()  
         
-        if added_obs_soft is not None and len(added_obs_soft) > 0:
-            # if (update_x, update_y) in added_obs_soft:
-            if np.any((added_obs_soft[:, 0] == update_x) & (added_obs_soft[:, 1] == update_y)):    
-                if show_animation:
-                    px = self.calc_grid_position(update_x, self.boundary[0, 0])
-                    py = self.calc_grid_position(update_y, self.boundary[1, 0])
-                    plt.plot(px, py, "xr")
-                return fixed_node.cost + gc + add_cost
+        update_x, update_y = update_node
+        
+        if update_x < 0 or update_x >= self.occ_map_obs.shape[0] or update_y < 0 or update_y >= self.occ_map_obs.shape[1]:
+            return float('inf') 
+    
+        map_cost = self.occ_map_obs[update_x][update_y] 
 
-        return fixed_node.cost + gc
+        cost = current_node.cost + move_cost + map_cost
+
+        # end_time = time.time()  
+        # print(f"Execution time: {end_time - start_time} seconds")
+        return cost
+    
+    @staticmethod
+    def compute_cost_heuristic(args):
+                o, node_data, goal_node, calc_heuristic_func = args
+                return o, node_data.cost + calc_heuristic_func(goal_node, node_data)
     
     
-    def planning(self, sx, sy, gx, gy,added_obs_soft=None):
+    def planning(self, sx, sy, gx, gy, mode= None, robot_name=None):
         """
         A star path search
 
@@ -86,42 +101,53 @@ class AstarPlanner():
             rx: x position list of the final path
             ry: y position list of the final path
         """
-        
+                    
         start_node = self.Node(self.calc_xy_index(sx, self.boundary[0,0]),
                                self.calc_xy_index(sy, self.boundary[1,0]), 0.0, -1)
+        
         goal_node = self.Node(self.calc_xy_index(gx, self.boundary[0,0]),
                               self.calc_xy_index(gy, self.boundary[1,0]), 0.0, -1)
 
-        def change_node_state(goal_node):
-            directions = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, -1), (1, -1), (-1, 1), (2,0), (-2,0), (0, 2), (0, -2), (2, 2), (-2, -2), (2, -2), (-2, 2)]
-            for dx, dy in directions:
-                temp_goal_x, temp_goal_y = goal_node.x, goal_node.y
-                while is_in_obstacle(np.array([goal_node.x / 10, goal_node.y / 10]), self.world.obstacles) or is_at_obstacle_vertex_or_edge(np.array([goal_node.x /10, goal_node.y /10]), self.world.obstacles):
-                    goal_node.x += dx
-                    goal_node.y += dy
-                    if is_at_obstacle_vertex_or_edge(np.array([goal_node.x /10, goal_node.y /10]), self.world.obstacles):
-                        goal_node.x, goal_node.y = temp_goal_x, temp_goal_y
-                        break
-                    elif is_in_obstacle(np.array([goal_node.x / 10, goal_node.y / 10]), self.world.obstacles):
-                        goal_node.x, goal_node.y = temp_goal_x, temp_goal_y
-                        break
-                    else:
-                        break
-            return goal_node
-        
-        start_node = change_node_state(start_node)
-        goal_node = change_node_state(goal_node)
-        
         open_set, closed_set = dict(), dict()
         open_set[self.calc_grid_index(start_node)] = start_node
 
         while True:
             if len(open_set) == 0:
-                print("Open set is empty.. for astar_planner_single")
+                print(f"Open set is empty.. for {robot_name}, \n Mode is: {mode}, \n Current position: {sx, sy}, \n Goal position: {gx, gy}")
                 # raise ValueError("Cannot find path")
+                raise ValueError("Cannot find path")
                 break
             
+            # ==================`=======================`、
+            # from concurrent.futures import ProcessPoolExecutor
+            # # 定义目标函数
+
+            # open_set_items = list(open_set.items())
+            # task_args = [
+            #     (o, node_data, goal_node, self.calc_heuristic)
+            #     for o, node_data in open_set_items
+            # ]
+
+            # batch_size = 100  # 每批任务大小
+            # results = []
+            # with ProcessPoolExecutor() as executor:
+            #     for i in range(0, len(task_args), batch_size):
+            #         batch_results = list(executor.map(AstarPlanner.compute_cost_heuristic, task_args[i:i+batch_size]))
+            #         results.extend(batch_results)
+
+            # c_id, _ = min(results, key=lambda x: x[1])
+
+            
             # start_time = time.time()
+            # ==================`=======================`
+            # cost_heuristic_cache={
+            #     o:open_set[o].cost + self.calc_heuristic(goal_node, open_set[o]) for o in open_set
+            # }
+            # c_id = min(
+            #     open_set,
+            #     key=lambda o: cost_heuristic_cache[o])
+            
+            # ==================`=======================`
             c_id = min(
                 open_set,
                 key=lambda o: open_set[o].cost + self.calc_heuristic(goal_node,
@@ -141,6 +167,9 @@ class AstarPlanner():
                                                  0) if event.key == 'escape' else None])
                 if len(closed_set.keys()) % 10 == 0:
                     plt.pause(0.001)
+                    # self.ax.savefig(f"astar.png")
+                    
+                    
 
             if current.x == goal_node.x and current.y == goal_node.y:
                 # print("Find end")
@@ -157,13 +186,21 @@ class AstarPlanner():
             # expand_grid search grid based on motion model
             for i, _ in enumerate(self.motion):
                 
+                # from line_profiler import LineProfiler
+                # profiler = LineProfiler()
+                # profiler_wrap = profiler(self.gcost_add)
+                # profiler_wrap(current, 
+                #             (current.x + self.motion[i][0], current.y + self.motion[i][1]),
+                #             i,
+                #             added_obs_soft=added_obs_soft)
+                # profiler.print_stats()
+        
                 node = self.Node(current.x + self.motion[i][0],
                                  current.y + self.motion[i][1],
                                 #  current.cost + self.motion[i][2],
                                 self.gcost_add(current, 
                                                (current.x + self.motion[i][0], current.y + self.motion[i][1]),
-                                               i,
-                                               added_obs_soft=added_obs_soft),
+                                               self.motion[i][2]),
                                  c_id)
                                
                 
@@ -201,6 +238,12 @@ class AstarPlanner():
             parent_index = n.parent_index
 
         return rx, ry
+
+    # @staticmethod
+    # def calc_heuristic(n1, n2):
+    #     w = 1.0  # weight of heuristic
+    #     d = w * math.hypot(n1.x - n2.x, n1.y - n2.y)
+    #     return d
     
     @staticmethod #Euclidean
     def calc_heuristic(n1, n2):
@@ -209,6 +252,17 @@ class AstarPlanner():
         dy = n1.y - n2.y
         return w * math.sqrt(dx * dx + dy * dy)
     
+    # @staticmethod #Chebyshev
+    # def calc_heuristic(n1, n2):
+    #     w = 1.0  # weight of heuristic
+    #     return w * max(abs(n1.x - n2.x), abs(n1.y - n2.y))
+    
+    # @staticmethod #Manhattan
+    # def calc_heuristic(n1, n2):
+    #     w = 1.0  # weight of heuristic
+    #     return w * (abs(n1.x - n2.x) + abs(n1.y - n2.y))
+    
+
 
     def calc_grid_position(self, index, min_position):
         """
@@ -224,6 +278,20 @@ class AstarPlanner():
 
     def calc_xy_index(self, position, min_pos):
         return int(np.floor((position - min_pos) / self.xy_res))
+    
+    # def calc_grid_position(self, index, min_position):
+    #     """
+    #     calc grid position
+
+    #     :param index:
+    #     :param min_position:
+    #     :return:
+    #     """
+    #     pos = index * self.xy_res+ min_position
+    #     return pos
+
+    # def calc_xy_index(self, position, min_pos):
+    #     return round((position - min_pos) / self.xy_res)
 
     def calc_grid_index(self, node):
         return (node.y - self.boundary[1,0]) * self.nx + (node.x - self.boundary[0,0])
@@ -242,7 +310,8 @@ class AstarPlanner():
             return False
 
         # collision check
-        if self.occ_map_obs[node.x][node.y]:
+        # if self.occ_map_obs[node.x][node.y] == 0:
+        if self.occ_map_obs[node.x][node.y] == np.inf:
             return False
 
         return True  

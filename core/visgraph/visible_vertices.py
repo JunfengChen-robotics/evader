@@ -24,7 +24,7 @@ SOFTWARE.
 from __future__ import division
 from math import pi, sqrt, atan, acos
 # from graph import Point
-from NewCode.src.Robot.MotionPlanner.GlobalPlanner.visgraph.graph import Point
+from .graph import Point
 
 
 INF = 10000

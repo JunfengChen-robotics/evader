@@ -21,21 +21,13 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
-import os, sys
-path = os.path.abspath(os.path.join(os.getcwd(), "."))
-DC_path = os.path.join(path)
-sys.path.append(DC_path)
 from timeit import default_timer
 from sys import stdout, version_info
 from multiprocessing import Pool
 from warnings import warn
-
-# from graph import Graph, Edge
-# from shortest_path import shortest_path_glb
-# from visible_vertices import visible_vertices, point_in_polygon, closest_point
-from NewCode.src.Robot.MotionPlanner.GlobalPlanner.visgraph.graph import Graph, Edge
-from NewCode.src.Robot.MotionPlanner.GlobalPlanner.visgraph.shortest_path import shortest_path_glb
-from NewCode.src.Robot.MotionPlanner.GlobalPlanner.visgraph.visible_vertices import closest_point, point_in_polygon,visible_vertices
+from .graph import Graph, Edge
+from .shortest_path import shortest_path_glb
+from .visible_vertices import closest_point, point_in_polygon,visible_vertices
 
 PYTHON3 = version_info[0] == 3
 if PYTHON3:

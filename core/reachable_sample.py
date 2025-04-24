@@ -8,21 +8,18 @@ from .setting import *
 
 class ReachableArea(): 
     
-    def __init__(self, world = None, pursuers = None , evader =None, robot_config = None, pred_step=8, w_c = 1.0 ,show=True):
+    def __init__(self, world = None, pursuers = None , evader =None, pred_step=8, w_c = 1.0 ,show=True):
         self.dt = world.timestep 
         self.t_span = np.arange(0, self.dt*pred_step, self.dt)
-        
-        self.robot_configs = robot_config
-                
         self.pursuers = pursuers
         self.evader = evader
         
-        self.relate_velocity_coeff = pursuers[0].velocity / evader.velocity
+        self.relate_velocity_coeff = pursuers[0].max_velocity / evader.velocity
         
         self.capture_range = pursuers[0].capture_range * w_c
         self.scope_e = evader.scout_range
         self.robot_radius = pursuers[0].robot_radius
-        self.pursuer_v = pursuers[0].velocity
+        self.pursuer_v = pursuers[0].max_velocity
         self.evader_v = evader.velocity
 
         self.obstacles = world.obstacles
