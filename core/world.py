@@ -10,8 +10,7 @@ from shapely.geometry import Polygon, LineString, Point
 
 class BaseWorld():
     
-    def __init__(self, config='world_config.yaml', coord_config='coord_config.yaml',random_seed= [], args =None, case='case1'):
-        self.args = args
+    def __init__(self, config='world.yaml', coord_config='coord.yaml',random_seed= [], case='case1'):
         self.case = case
         self.load_world_config(config)
         self.load_coord_config(coord_config)
