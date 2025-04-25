@@ -79,6 +79,7 @@ class Evader():
                                                 pred_step = PRED_STEP, 
                                                 w_c = 1, 
                                                 show=False)
+        
     # endregion
     
     
@@ -161,6 +162,7 @@ class Evader():
 
     # region 逃跑策略
     def select_goal(self):
+        self.obsmap.cost_map.update_cost_maps(self)
         goals = self.obsmap.prepare_evader_goals(self, NP_SEED)
         pe = self.reachable_area.select_goal(self,goals, self.obsmap.cost_map)
         self.goal = pe[:,-1].reshape(2)
@@ -173,14 +175,14 @@ class Evader():
        
         self.modified_goal_pos = self.modfiy_goal_projected(self.goal, self.world,'goal')
 
-        self.act_planner(self.world, self.world.grid_map.occ_map_obs) 
+        self.act_planner(self.world, self.obsmap.cost_map.evader_cost_map) 
         self.global_planner.astar_special = False
         
         state = self.modfiy_goal_projected(self.state.reshape(2), self.world, 'current state')
         start = state
         end = self.modified_goal_pos
         
-        self.global_planner.planning(end[0], end[1],start[0], start[1], 'evader')
+        self.global_planner.planning(end[0], end[1],start[0], start[1])
         
         m = self.global_planner.path.shape[0]
         

@@ -108,7 +108,7 @@ class ReachableArea():
         start = evader.state
         end = goal
         
-        self.astar_planner.planning(end[0], end[1],start[0], start[1],'evader')
+        self.astar_planner.planning(end[0], end[1],start[0], start[1])
         
         dist_len = len(self.astar_planner.path)
         

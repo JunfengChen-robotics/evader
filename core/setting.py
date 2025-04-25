@@ -60,7 +60,7 @@ MAIN_BASE = 100  # Larger one: for cases need influence larger area
 MAIN_SIGMA = 5
 
 ASSIST_BASE = 20  # Smaller one
-ASSIST_SIGMA = 3
+ASSIST_SIGMA = 2
 ASSIST_SIGMA_P = 3 # 3 for capture_range 0.4, 5 for capture_range 0.8
 
 BOUNDARY_BASE = 100

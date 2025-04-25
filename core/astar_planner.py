@@ -14,11 +14,8 @@ path = os.path.abspath(os.path.join(os.getcwd(), "."))
 DC_path = os.path.join(path)
 sys.path.append(DC_path)
 import math
-import time
 
 import matplotlib.pyplot as plt
-from .world import BaseWorld
-import argparse
 
 show_animation = False
 
@@ -117,37 +114,6 @@ class AstarPlanner():
                 # raise ValueError("Cannot find path")
                 raise ValueError("Cannot find path")
                 break
-            
-            # ==================`=======================`、
-            # from concurrent.futures import ProcessPoolExecutor
-            # # 定义目标函数
-
-            # open_set_items = list(open_set.items())
-            # task_args = [
-            #     (o, node_data, goal_node, self.calc_heuristic)
-            #     for o, node_data in open_set_items
-            # ]
-
-            # batch_size = 100  # 每批任务大小
-            # results = []
-            # with ProcessPoolExecutor() as executor:
-            #     for i in range(0, len(task_args), batch_size):
-            #         batch_results = list(executor.map(AstarPlanner.compute_cost_heuristic, task_args[i:i+batch_size]))
-            #         results.extend(batch_results)
-
-            # c_id, _ = min(results, key=lambda x: x[1])
-
-            
-            # start_time = time.time()
-            # ==================`=======================`
-            # cost_heuristic_cache={
-            #     o:open_set[o].cost + self.calc_heuristic(goal_node, open_set[o]) for o in open_set
-            # }
-            # c_id = min(
-            #     open_set,
-            #     key=lambda o: cost_heuristic_cache[o])
-            
-            # ==================`=======================`
             c_id = min(
                 open_set,
                 key=lambda o: open_set[o].cost + self.calc_heuristic(goal_node,
@@ -186,15 +152,6 @@ class AstarPlanner():
             # expand_grid search grid based on motion model
             for i, _ in enumerate(self.motion):
                 
-                # from line_profiler import LineProfiler
-                # profiler = LineProfiler()
-                # profiler_wrap = profiler(self.gcost_add)
-                # profiler_wrap(current, 
-                #             (current.x + self.motion[i][0], current.y + self.motion[i][1]),
-                #             i,
-                #             added_obs_soft=added_obs_soft)
-                # profiler.print_stats()
-        
                 node = self.Node(current.x + self.motion[i][0],
                                  current.y + self.motion[i][1],
                                 #  current.cost + self.motion[i][2],
@@ -239,11 +196,6 @@ class AstarPlanner():
 
         return rx, ry
 
-    # @staticmethod
-    # def calc_heuristic(n1, n2):
-    #     w = 1.0  # weight of heuristic
-    #     d = w * math.hypot(n1.x - n2.x, n1.y - n2.y)
-    #     return d
     
     @staticmethod #Euclidean
     def calc_heuristic(n1, n2):
@@ -251,17 +203,6 @@ class AstarPlanner():
         dx = n1.x - n2.x
         dy = n1.y - n2.y
         return w * math.sqrt(dx * dx + dy * dy)
-    
-    # @staticmethod #Chebyshev
-    # def calc_heuristic(n1, n2):
-    #     w = 1.0  # weight of heuristic
-    #     return w * max(abs(n1.x - n2.x), abs(n1.y - n2.y))
-    
-    # @staticmethod #Manhattan
-    # def calc_heuristic(n1, n2):
-    #     w = 1.0  # weight of heuristic
-    #     return w * (abs(n1.x - n2.x) + abs(n1.y - n2.y))
-    
 
 
     def calc_grid_position(self, index, min_position):
@@ -278,20 +219,6 @@ class AstarPlanner():
 
     def calc_xy_index(self, position, min_pos):
         return int(np.floor((position - min_pos) / self.xy_res))
-    
-    # def calc_grid_position(self, index, min_position):
-    #     """
-    #     calc grid position
-
-    #     :param index:
-    #     :param min_position:
-    #     :return:
-    #     """
-    #     pos = index * self.xy_res+ min_position
-    #     return pos
-
-    # def calc_xy_index(self, position, min_pos):
-    #     return round((position - min_pos) / self.xy_res)
 
     def calc_grid_index(self, node):
         return (node.y - self.boundary[1,0]) * self.nx + (node.x - self.boundary[0,0])
@@ -329,5 +256,4 @@ class AstarPlanner():
                   [1, 1, math.sqrt(2)]]
 
         return motion
-
 

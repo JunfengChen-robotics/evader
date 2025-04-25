@@ -112,10 +112,8 @@ class CostMap:
     def update_cost_maps(self, evader):
         start_time = time.time()
 
-        self.update_hider_cost_map(evader)
         if evader.robot_memory_pos_change:
             self.update_evader_cost_map(evader)
-        self.update_attacker_cost_map(evader)
 
         end_time = time.time()
 
