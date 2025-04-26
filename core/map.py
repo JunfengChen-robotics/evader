@@ -22,8 +22,7 @@ class MapGenerate():
         self.all_pt = self.idx_to_points(ij)
         obs_free_ind = self.is_in_obstacle(self.all_pt, obstacles)
 
-        self.inflated_obstacles = self.inflate_obstacles(self.obstacles, self.margin)
-        # obs_free_ind = is_in_obstacle(self.all_pt, self.inflated_obstacles)
+        # self.inflated_obstacles = self.inflate_obstacles(self.obstacles, self.margin)
 
         # generate occ map with obs
         occ_map_obs = np.zeros((self.nx, self.ny), dtype=float)

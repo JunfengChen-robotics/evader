@@ -74,7 +74,7 @@ class ReachableArea():
 
         for goal in evader_goals:
 
-            if (np.linalg.norm(evader.state - goal) < 3*self.robot_radius or is_in_obstacle(goal, self.world.grid_map.inflated_obstacles)) \
+            if (np.linalg.norm(evader.state - goal) < 3*self.robot_radius or is_in_obstacle(goal, self.world.grid_map.obstacles)) \
                   and not any(np.array_equal(goal, forbidden_goal) for forbidden_goal in self.tmp_forbidden_goals):
                 self.tmp_forbidden_goals.append(goal)
 

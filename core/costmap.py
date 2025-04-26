@@ -111,7 +111,8 @@ class CostMap:
 
     def update_cost_maps(self, evader):
         start_time = time.time()
-
+        evader.find_nearest_free_point(evader.world)
+        evader.find_nearest_inner_point()
         if evader.robot_memory_pos_change:
             self.update_evader_cost_map(evader)
 

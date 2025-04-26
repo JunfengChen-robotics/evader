@@ -162,6 +162,9 @@ class Evader():
 
     # region 逃跑策略
     def select_goal(self):
+        self.act_planner(self.world, self.obsmap.cost_map.evader_cost_map) 
+        self.find_nearest_free_point(self.world)
+        self.find_nearest_inner_point()
         self.obsmap.cost_map.update_cost_maps(self)
         goals = self.obsmap.prepare_evader_goals(self, NP_SEED)
         pe = self.reachable_area.select_goal(self,goals, self.obsmap.cost_map)
@@ -348,6 +351,7 @@ class Evader():
             
         if not is_in_boundary(self.state.reshape(2,1).T.ravel().tolist(), boundary):
             raise ValueError("No inner point found.")       
+    
     
     # endregion
     
